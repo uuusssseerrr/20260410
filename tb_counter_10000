@@ -1,0 +1,50 @@
+`timescale 1ns / 1ps
+
+module tb_counter_10000();
+
+reg clk, rst;
+reg [2:0] sw;
+wire [3:0] fnd_com;
+wire [7:0] fnd_data;
+
+counter_10000 dut (
+    .clk(clk),
+    .rst(rst),
+    .sw(sw),
+    .fnd_com(fnd_com),
+    .fnd_data(fnd_data)
+);
+
+always #5 clk = ~ clk;
+
+initial begin
+    clk = 0;
+    rst = 1;
+    sw = 3'b000;
+
+    #20;
+    rst = 0;
+
+    //case1. run 제어
+    sw[0] = 1;
+    #300_000_000;   //c0 f9 a4
+
+    //case2. down 전환
+    sw[2] = 1; // down
+    #500_000_000;
+
+    //case3. clear 확인
+    sw[1] = 1; // clear
+    #100_000_000;
+    sw[1] = 0;
+
+    //case4. stop 제어
+    #200_000_000; //run
+    sw[0] = 0; //stop
+
+    #500_000_000;
+    $stop;
+end
+
+
+endmodule
