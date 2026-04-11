@@ -1,0 +1,167 @@
+`timescale 1ns / 1ps
+
+module counter_10000 (
+    input clk,
+    input rst,
+    input [2:0] sw,
+    output [3:0] fnd_com, //segment 위치
+    output [7:0] fnd_data //한자리 decimal
+);
+
+    wire [13:0] w_tick_counter; //9999
+    wire runstop;
+    wire clear;
+    wire updown;
+
+fnd_controller U_FND_CNTL (
+    .clk(clk),
+    .rst(rst),
+    .fnd_in(w_tick_counter),
+    .fnd_com(fnd_com),
+    .fnd_data(fnd_data)
+);
+
+datapath U_DATAPATH (
+    .clk(clk),
+    .rst(rst),
+    .runstop(runstop),
+    .clear(clear),
+    .updown(updown),
+    .tick_counter(w_tick_counter)
+);
+
+control_unit U_CNT (
+    .clk(clk),
+    .rst(rst),
+    .sw(sw), //control unit
+    .runstop(runstop),
+    .clear(clear),
+    .updown(updown)
+);
+endmodule
+
+
+module control_unit (
+    input clk,
+    input rst,
+    input [2:0] sw, //control unit
+    output reg runstop,
+    output reg clear,
+    output reg updown
+);
+
+    always @(posedge clk, posedge rst) begin
+        if(rst) begin
+            runstop <= 1'b0;
+            clear <= 1'b1; //초기화
+            updown <= 1'b0;
+        end else begin
+            runstop <= sw[0]; //run
+            clear <= sw[1]; //초기화
+            updown <= sw[2]; //down
+        end
+    end
+endmodule
+
+
+module datapath (
+    input clk,
+    input rst,
+    input runstop,
+    input clear,
+    input updown,
+    output [13:0] tick_counter
+);
+
+    wire w_tick_10hz;  //밑에 두 모듈끼리 연결
+
+    tick_counter U_TICK_COUNTER (
+        .clk(clk),
+        .rst(rst),
+        .i_tick(w_tick_10hz),
+        .clear(clear),
+        .updown(updown),
+        .o_tick_counter(tick_counter)
+    );
+
+    clk_tick_gen U_CLK_TICK_GEN (
+        .clk(clk),
+        .rst(rst),
+        .runstop(runstop),
+        .clear(clear),
+        .o_tick(w_tick_10hz)
+    );
+endmodule
+
+
+module tick_counter (
+    input clk,
+    input rst,
+    input i_tick,
+    input clear,
+    input updown,
+    output [13:0] o_tick_counter
+);
+
+    reg [$clog2(10_000)-1:0] tick_counter_reg; //9999 나올 거니까 비트는 자동 계산
+    assign o_tick_counter = tick_counter_reg;
+
+    always @(posedge clk, posedge rst) begin
+        if (rst) begin
+            tick_counter_reg <= 14'd0;  //bit계산 안되면 0 넣어도 됨.
+        end else begin
+            if (clear)//1. clear
+                tick_counter_reg <= 14'd0;
+            else begin
+                if (i_tick == 1'b1 && updown == 1'b0) begin //up
+                    if (tick_counter_reg == (10_000 - 1)) //9999일 때 0으로 변환
+                        tick_counter_reg <= 14'd0;
+                    else
+                        tick_counter_reg <= tick_counter_reg + 1;
+                end
+                else if (i_tick == 1'b1 && updown == 1'b1) begin //down
+                    if (tick_counter_reg == 14'd0) //0일 때 9999로 변환
+                        tick_counter_reg <= 14'd9999;
+                    else
+                        tick_counter_reg <= tick_counter_reg - 1;
+                end
+            end
+        end
+    end
+endmodule
+
+
+module clk_tick_gen (
+    input clk,
+    input rst,
+    input runstop,
+    input clear,
+    output reg [3:0] o_tick //이거 왜 4비트지??
+);
+    // counter = 100_000_000 / 10 -1 : 100Mhz -> 10hz
+    reg [$clog2(100_000_000/10)-1:0] counter_reg;  //미리 계산=23, 0부터니까 하나 뺐음.
+
+    always @(posedge clk, posedge rst) begin
+        if (rst) begin // 초기값 설정
+            counter_reg <= 24'd0;
+            o_tick <= 1'b0;
+        end else begin
+            if (clear) begin // 1. run 중이라도 clear됨
+                counter_reg <= 24'd0;
+                o_tick <= 1'b0;
+            end
+            else if (runstop) begin // 2. run stop 결정
+                if(counter_reg == (10_000_000 -1)) begin // 2-1. 다 찬 경우
+                    counter_reg <= 24'd0;
+                    o_tick <= 1'b1;
+                end else begin //2-2. 다 안 찬 경우
+                    counter_reg <= counter_reg + 1;
+                    o_tick <= 1'b0;
+                end
+            end
+            else begin //3. run과 clear 모두 sw off
+            o_tick <= 1'b0;
+            end
+        end
+    end
+endmodule
